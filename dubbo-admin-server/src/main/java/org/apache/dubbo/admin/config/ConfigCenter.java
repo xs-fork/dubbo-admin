@@ -34,13 +34,15 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.DependsOn;
 
-import java.util.Arrays;
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Properties;
 
 import static org.apache.dubbo.common.constants.CommonConstants.CLUSTER_KEY;
 
 @Configuration
 public class ConfigCenter {
-
 
 
     //centers in dubbo 2.7
@@ -77,7 +79,6 @@ public class ConfigCenter {
     private URL metadataUrl;
 
 
-
     /*
      * generate dynamic configuration client
      */
@@ -86,26 +87,21 @@ public class ConfigCenter {
         GovernanceConfiguration dynamicConfiguration = null;
 
         if (StringUtils.isNotEmpty(configCenter)) {
-            configCenterUrl = formUrl(configCenter, configCenterGroup, username, password);
+            configCenterUrl      = formUrl(configCenter, configCenterGroup, username, password);
             dynamicConfiguration = ExtensionLoader.getExtensionLoader(GovernanceConfiguration.class).getExtension(configCenterUrl.getProtocol());
             dynamicConfiguration.setUrl(configCenterUrl);
             dynamicConfiguration.init();
             String config = dynamicConfiguration.getConfig(Constants.GLOBAL_CONFIG_PATH);
-
             if (StringUtils.isNotEmpty(config)) {
-                Arrays.stream(config.split("\n")).forEach( s -> {
-                    if(s.startsWith(Constants.REGISTRY_ADDRESS)) {
-                        String registryAddress = s.split("=")[1].trim();
-                        registryUrl = formUrl(registryAddress, configCenterGroup, username, password);
-                    } else if (s.startsWith(Constants.METADATA_ADDRESS)) {
-                        metadataUrl = formUrl(s.split("=")[1].trim(), configCenterGroup, username, password);
-                    }
-                });
+                // 配置中可能包含namespace配置，namespace配置包含=号，因此旧的解析方式会存在问题
+                Properties prop = getProperties(config);
+                registryUrl = formUrl((String) prop.get(Constants.REGISTRY_ADDRESS), configCenterGroup, username, password);
+                metadataUrl = formUrl((String) prop.get(Constants.METADATA_ADDRESS), metadataGroup, username, password);
             }
         }
         if (dynamicConfiguration == null) {
             if (StringUtils.isNotEmpty(registryAddress)) {
-                registryUrl = formUrl(registryAddress, registryGroup, username, password);
+                registryUrl          = formUrl(registryAddress, registryGroup, username, password);
                 dynamicConfiguration = ExtensionLoader.getExtensionLoader(GovernanceConfiguration.class).getExtension(registryUrl.getProtocol());
                 dynamicConfiguration.setUrl(registryUrl);
                 dynamicConfiguration.init();
@@ -116,6 +112,23 @@ public class ConfigCenter {
             }
         }
         return dynamicConfiguration;
+    }
+
+    /**
+     * 获取属性
+     *
+     * @param config 配置
+     * @return {@link Properties}
+     */
+    private Properties getProperties(String config) {
+        Properties properties = new Properties();
+        try {
+            ByteArrayInputStream inputStream = new ByteArrayInputStream(config.getBytes(StandardCharsets.UTF_8.name()));
+            properties.load(inputStream);
+        } catch (IOException e) {
+            e.printStackTrace();
+        }
+        return properties;
     }
 
     /*

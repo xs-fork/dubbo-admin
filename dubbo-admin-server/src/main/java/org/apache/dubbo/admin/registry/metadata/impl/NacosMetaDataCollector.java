@@ -17,6 +17,10 @@
 
 package org.apache.dubbo.admin.registry.metadata.impl;
 
+import com.alibaba.nacos.api.NacosFactory;
+import com.alibaba.nacos.api.config.ConfigService;
+import com.alibaba.nacos.api.exception.NacosException;
+import org.apache.commons.lang3.StringUtils;
 import org.apache.dubbo.admin.common.util.Constants;
 import org.apache.dubbo.admin.registry.metadata.MetaDataCollector;
 import org.apache.dubbo.common.URL;
@@ -25,81 +29,87 @@ import org.apache.dubbo.common.logger.LoggerFactory;
 import org.apache.dubbo.metadata.report.identifier.KeyTypeEnum;
 import org.apache.dubbo.metadata.report.identifier.MetadataIdentifier;
 
-import com.alibaba.nacos.api.NacosFactory;
-import com.alibaba.nacos.api.config.ConfigService;
-import com.alibaba.nacos.api.exception.NacosException;
-
 import java.util.Properties;
 
+import static com.alibaba.nacos.api.PropertyKeyConst.NAMESPACE;
 import static com.alibaba.nacos.api.PropertyKeyConst.SERVER_ADDR;
 
 public class NacosMetaDataCollector implements MetaDataCollector {
-    private static final Logger logger = LoggerFactory.getLogger(NacosMetaDataCollector.class);
-    private ConfigService configService;
-    private String group;
-    private URL url;
-    @Override
-    public void setUrl(URL url) {
-        this.url = url;
-    }
 
-    @Override
-    public URL getUrl() {
-        return url;
-    }
+	private static final Logger logger = LoggerFactory.getLogger(NacosMetaDataCollector.class);
 
-    @Override
-    public void init() {
-        group = url.getParameter(Constants.GROUP_KEY, "DEFAULT_GROUP");
+	private ConfigService configService;
 
-        configService = buildConfigService(url);
-    }
+	private String group;
 
-    private ConfigService buildConfigService(URL url) {
-        Properties nacosProperties = buildNacosProperties(url);
-        try {
-            configService = NacosFactory.createConfigService(nacosProperties);
-        } catch (NacosException e) {
-            if (logger.isErrorEnabled()) {
-                logger.error(e.getErrMsg(), e);
-            }
-            throw new IllegalStateException(e);
-        }
-        return configService;
-    }
+	private URL url;
 
-    private Properties buildNacosProperties(URL url) {
-        Properties properties = new Properties();
-        setServerAddr(url, properties);
-        return properties;
-    }
+	@Override
+	public void setUrl(URL url) {
+		this.url = url;
+	}
 
-    private void setServerAddr(URL url, Properties properties) {
+	@Override
+	public URL getUrl() {
+		return url;
+	}
 
-        String serverAddr = url.getHost() + // Host
-                ":" +
-                url.getPort() // Port
-                ;
-        properties.put(SERVER_ADDR, serverAddr);
-    }
+	@Override
+	public void init() {
+		group = url.getParameter(Constants.GROUP_KEY, "DEFAULT_GROUP");
 
-    @Override
-    public String getProviderMetaData(MetadataIdentifier key) {
-        return getMetaData(key);
-    }
+		configService = buildConfigService(url);
+	}
 
-    @Override
-    public String getConsumerMetaData(MetadataIdentifier key) {
-        return getMetaData(key);
-    }
+	private ConfigService buildConfigService(URL url) {
+		Properties nacosProperties = buildNacosProperties(url);
+		try {
+			configService = NacosFactory.createConfigService(nacosProperties);
+		}
+		catch (NacosException e) {
+			if (logger.isErrorEnabled()) {
+				logger.error(e.getErrMsg(), e);
+			}
+			throw new IllegalStateException(e);
+		}
+		return configService;
+	}
 
-    private String getMetaData(MetadataIdentifier identifier) {
-        try {
-            return configService.getConfig(identifier.getUniqueKey(KeyTypeEnum.UNIQUE_KEY),
-                    group, 1000 * 10);
-        } catch (NacosException e) {
-            logger.warn("Failed to get " + identifier + " from nacos, cause: " + e.getMessage(), e);
-        }
-        return null;
-    }
+	private Properties buildNacosProperties(URL url) {
+		Properties properties = new Properties();
+		setServerAddr(url, properties);
+		return properties;
+	}
+
+	private void setServerAddr(URL url, Properties properties) {
+
+		// Host:Port
+		String serverAddr = String.format("%s:%s", url.getHost(), url.getPort());
+		properties.put(SERVER_ADDR, serverAddr);
+		String namespace = url.getParameter("namespace");
+		if (StringUtils.isNotBlank(namespace)) {
+			properties.put(NAMESPACE, namespace);
+		}
+	}
+
+	@Override
+	public String getProviderMetaData(MetadataIdentifier key) {
+		return getMetaData(key);
+	}
+
+	@Override
+	public String getConsumerMetaData(MetadataIdentifier key) {
+		return getMetaData(key);
+	}
+
+	private String getMetaData(MetadataIdentifier identifier) {
+		try {
+			return configService.getConfig(identifier.getUniqueKey(KeyTypeEnum.UNIQUE_KEY), group, 1000 * 10);
+		}
+		catch (NacosException e) {
+			logger.warn("Failed to get " + identifier + " from nacos, cause: " + e.getMessage(), e);
+		}
+		return null;
+	}
+
 }
